@@ -1,0 +1,89 @@
+# Load necessary libraries
+library(readxl)
+library(caret)
+library(dplyr)
+library(lubridate) # For easy date handling
+library(MASS)      # For stepAIC
+library(openxlsx)
+library(ggplot2)
+
+
+# Load the data
+data <- read_excel("Rproject/Vanderbilt.xlsx")
+test_data <- read_excel("Rproject/surgery_prediction_data.xlsx")
+
+# Convert SurgDate to Date type
+data$SurgDate <- as.Date(data$SurgDate)
+
+# Extract the month from SurgDate and convert it to a factor
+data$Month <- factor(month(data$SurgDate), labels = c("Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+                                                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))
+
+# Convert DOW to a factor
+data$DOW <- as.factor(data$DOW)
+
+# Split the data into training and validation sets
+set.seed(1) # For reproducibility
+splitIndex <- createDataPartition(data$Actual, p = .80, list = FALSE)
+trainData <- data[splitIndex, ]
+validationData <- data[-splitIndex, ]
+
+# Fit a linear model with Tless10 to Tless1 and DOW
+model <- lm(Actual ~ Tless28 + Tless21 + Tless14 + Tless13 + Tless12 + Tless11 + Tless10 + Tless9 + Tless8 + DOW, data = trainData)
+
+# View the summary of the model
+summary(model)
+
+# Predict on the validation data with the model including lag variables
+predictions <- predict(model, newdata = validationData)
+
+# Evaluate the model with lag variables
+mse <- mean((validationData$Actual - predictions_with_lags)^2)
+print(paste("Mean Squared Error of Model with Lag Variables:", mse))
+
+# Create a dataframe to store the actual and predicted values
+validation_results <- data.frame(Actual = validationData$Actual, Predicted = predictions)
+
+# Print the validation results
+print(validation_results)
+
+# Calculate the absolute percentage difference for each prediction
+validation_results$PercentageDifference <- abs((validation_results$Actual - validation_results$Predicted) / validation_results$Actual) * 100
+
+# Calculate the average percentage difference
+average_percentage_difference <- mean(validation_results$PercentageDifference)
+
+# Print the validation results and average percentage difference
+print(paste("Average Percentage Difference:", average_percentage_difference, "%"))
+
+# Residuals vs Fitted Plot
+ggplot(trainData, aes(x = fitted(model), y = resid(model))) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  theme_minimal() +
+  labs(title = "Residuals vs Fitted", x = "Fitted Values", y = "Residuals")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Normal Q-Q Plot
+qqnorm(resid(model))
+qqline(resid(model), col = "red")
+
+# Actual vs Predicted Plot
+ggplot(validationData, aes(x = Actual, y = predictions)) +
+  geom_point(alpha = 0.5, color = "blue") +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  theme_minimal() +
+  labs(title = "Actual vs Predicted", x = "Actual", y = "Predicted")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Assuming 'model' is your linear model
+coef_df <- as.data.frame(coef(summary(model)))
+coef_df$term <- rownames(coef_df)
+
+ggplot(coef_df, aes(x = term, y = Estimate, fill = term)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Model Coefficients", x = "Terms", y = "Estimate") +
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5))
+
